@@ -116,7 +116,7 @@ where
                 dist: Dist {
                     r#type: String::from("zip"),
                     url: format!(
-                        "https://graytoowolf.coding.net/p/graytoowolf/d/plugins-dist/git/raw/master/{}_{}.zip",
+                        "https://bs.mcpeau.com/plugins/{}_{}.zip",
                         name, version
                     ),
                     shasum: hashes.get(name).map(|s| s.to_owned()).unwrap_or_default(),
