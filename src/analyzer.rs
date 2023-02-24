@@ -14,11 +14,8 @@ pub fn analyze(
     let repo = Repository::open(repo_path)?;
 
     let head = repo.head()?.peel_to_commit()?;
-    let commit_msg = head
-        .message()
-        .unwrap_or_else(|| "(No commit message.)")
-        .trim();
-    info!("Head commit is {}: {}", head.id(), commit_msg);
+    let commit_msg = head.message().unwrap_or("(No commit message.)").trim();
+    info!("Head commit is {}: {commit_msg}", head.id());
 
     let mut opts = DiffOptions::new();
     opts.include_untracked(true).ignore_filemode(true);
@@ -55,13 +52,13 @@ pub fn analyze(
                     let plugin_name = re_plugin_name
                         .captures(&path)
                         .or_else(|| {
-                            error!("Cannot extract plugin name from path: {}", path);
+                            error!("Cannot extract plugin name from path: {path}");
                             None
                         })
                         .unwrap()
                         .get(1)
                         .or_else(|| {
-                            error!("Cannot extract plugin name from path: {}", path);
+                            error!("Cannot extract plugin name from path: {path}");
                             None
                         })
                         .unwrap()
@@ -70,14 +67,14 @@ pub fn analyze(
                     let version = caps
                         .get(1)
                         .or_else(|| {
-                            error!("Cannot extract version of plugin \"{}\"", plugin_name);
+                            error!("Cannot extract version of plugin \"{plugin_name}\"");
                             None
                         })
                         .unwrap()
                         .as_str()
                         .to_owned();
 
-                    info!("Version changed: {} -> {}", plugin_name, version);
+                    info!("Version changed: {plugin_name} -> {version}");
 
                     map.insert(plugin_name, version);
                 }
@@ -95,7 +92,7 @@ pub async fn analyze_commit_message(
     plugins: &mut HashMap<String, String>,
 ) -> anyhow::Result<()> {
     let re_force_update = Regex::new(r"force update: ([\w-]+)").unwrap();
-    let plugin_name = re_force_update.captures(&message).and_then(|s| s.get(1));
+    let plugin_name = re_force_update.captures(message).and_then(|s| s.get(1));
     if let Some(name) = plugin_name {
         let package_json = fs::read_to_string(format!(
             "{}/plugins/{}/package.json",
