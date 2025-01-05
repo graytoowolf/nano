@@ -115,8 +115,7 @@ where
                 dist: Dist {
                     r#type: String::from("zip"),
                     url: format!(
-                        "https://bs.mcpeau.com/plugins/{}_{}.zip",
-                        name, version
+                        "https://bs.mcpeau.com/plugins/{name}_{version}.zip",
                     ),
                     shasum: hashes.get(name).map(|s| s.to_owned()).unwrap_or_default(),
                 },
