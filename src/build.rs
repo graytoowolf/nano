@@ -9,7 +9,8 @@ async fn pnpm(root: impl AsRef<Path>) -> Result<()> {
     info!("Running pnpm to install dependencies...");
 
     let output = Command::new("pnpm")
-        .arg("i")
+        .arg("install")
+        .arg("--no-frozen-lockfile")
         .current_dir(root)
         .output()
         .await?;
