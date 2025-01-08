@@ -58,17 +58,17 @@ async fn read_registry(path: impl AsRef<Path>) -> Result<BTreeMap<String, Packag
     Ok(to_map(registry.packages))
 }
 
-async fn update_registry<'a, S1, S2>(
+async fn update_registry<'a, S>(
     packages: &'a mut BTreeMap<String, Package>,
-    plugins_dir: S1,
-    updated: impl Iterator<Item = (S2, S2)>,
+    plugins_dir: &str,
+    updated: impl Iterator<Item = (S, S)>,
     hashes: &'a HashMap<&'a str, String>,
     lang: &'static str,
     i18n_store: &'a I18nStore,
+    download_base: &str,
 ) -> Result<()>
 where
-    S1: AsRef<str>,
-    S2: AsRef<str>,
+    S: AsRef<str>,
 {
     info!("Updating registry data for language '{lang}'...");
 
@@ -77,7 +77,7 @@ where
         let version = version.as_ref();
         let json = fs::read_to_string(format!(
             "{}/plugins/{name}/package.json",
-            plugins_dir.as_ref(),
+            plugins_dir
         ))
         .await?;
         let package_json = serde_json::from_str::<PackageJson>(&json)
@@ -115,7 +115,8 @@ where
                 dist: Dist {
                     r#type: String::from("zip"),
                     url: format!(
-                        "https://bs.mcpeau.com/plugins/{name}_{version}.zip",
+                        "{}/{name}_{version}.zip",
+                        download_base.trim_end_matches('/')
                     ),
                     shasum: hashes.get(name).map(|s| s.to_owned()).unwrap_or_default(),
                 },
@@ -158,24 +159,28 @@ fn calculate_hashes<'a>(
         .collect()
 }
 
-pub async fn operate_registry<S: AsRef<str>>(
-    path: &str,
-    plugins_dir: S,
-    updated: &HashMap<String, String>,
+pub async fn operate_registry(
+    dist_dir: impl AsRef<Path>,
+    plugins_dir: impl AsRef<Path>,
+    plugins: &HashMap<String, String>,
     i18n_store: &I18nStore,
+    download_base: &str,
 ) -> Result<()> {
-    let hashes = calculate_hashes(path, updated);
+    let dist_dir_str = dist_dir.as_ref().to_str().unwrap();
+    let plugins_dir_str = plugins_dir.as_ref().to_str().unwrap();
+    let hashes = calculate_hashes(dist_dir_str, plugins);
 
     for lang in &["en", "zh_CN"] {
-        let path = format!("{path}/registry_{lang}.json");
+        let path = format!("{}/registry_{lang}.json", dist_dir_str);
         let mut packages = read_registry(&path).await?;
         update_registry(
             &mut packages,
-            &plugins_dir,
-            updated.iter(),
+            plugins_dir_str,
+            plugins.iter(),
             &hashes,
             lang,
             i18n_store,
+            download_base,
         )
         .await?;
         write_registry(&path, packages).await?;

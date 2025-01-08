@@ -22,6 +22,7 @@ async fn main() -> anyhow::Result<()> {
     println!("Blessing Skin Plugins Marketplace Builder.");
 
     let path = env::var("PLUGINS_DIR").unwrap_or_else(|_| String::from("."));
+    let download_base = env::var("DOWNLOAD_BASE").unwrap_or_else(|_| String::from("https://bs.mcpeau.com/plugins"));
 
     let (message, mut plugins) = analyzer::analyze(&path)?;
     analyzer::analyze_commit_message(&message, &path, &mut plugins).await?;
@@ -43,7 +44,7 @@ async fn main() -> anyhow::Result<()> {
         )?;
     }
 
-    registry::operate_registry(".dist", &path, &plugins, &i18n_store).await?;
+    registry::operate_registry(".dist", &path, &plugins, &i18n_store, &download_base).await?;
 
     save_updated(
         plugins.iter().map(|(k, v)| (k.as_str(), v.as_str())),
