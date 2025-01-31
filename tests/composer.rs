@@ -1,16 +1,16 @@
-use futures::future::try_join_all;
-use serde_json::json;
-use std::{collections::HashSet, env::temp_dir, io::ErrorKind};
-use tokio::{
-    fs::{self, File},
-    io::Result,
-};
+// tests/composer.rs
+use nano::composer;
+use std::{collections::HashMap, env::temp_dir};
+use tokio::{fs, io::Result};
 
 #[tokio::test]
 async fn parse_lock() -> Result<()> {
-    let packages = nano::composer::parse_lock("./tests/composer").await?;
+    let packages = composer::parse_lock("./tests/composer").await?;
 
-    assert!(packages.get("blessing/filter").is_some());
+    assert_eq!(
+        packages.get("blessing/filter"),
+        Some(&"v1.2.0".to_string())
+    );
 
     Ok(())
 }
@@ -20,82 +20,76 @@ async fn run_composer() -> Result<()> {
     let mut path = temp_dir();
     path.push("composer-test");
 
-    match fs::remove_dir_all(&path).await {
-        Ok(_) => {}
-        Err(e) if e.kind() == ErrorKind::NotFound => {}
-        e => panic!("{e:?}"),
-    };
+    let _ = fs::remove_dir_all(&path).await;
+    fs::create_dir_all(&path).await?;
 
-    fs::create_dir(&path).await?;
-    fs::write(format!("{}/composer.json", path.display()), b"{}").await?;
+    fs::write(
+        path.join("composer.json"),
+        r#"{ "require": { "php": "^8.1" } }"#,
+    )
+    .await?;
 
-    nano::composer::run_composer(&path).await
+    composer::run_composer(&path).await
 }
 
 #[tokio::test]
 async fn dedupe() -> Result<()> {
-    let mut path = temp_dir();
-    path.push("dedupe-test");
-    let path_display = path.display();
+    let test_dir = temp_dir().join("dedupe-test");
+    let path_display = test_dir.display();
 
-    match fs::remove_dir_all(&path).await {
-        Ok(_) => {}
-        Err(e) if e.kind() == ErrorKind::NotFound => {}
-        e => panic!("{e:?}"),
-    };
+    let _ = fs::remove_dir_all(&test_dir).await;
+    fs::create_dir_all(&test_dir).await?;
 
-    fs::create_dir(&path).await?;
+    let mut bs_lock = HashMap::new();
+    bs_lock.insert("illuminate/support".to_string(), "v6.20.0".to_string());
+    bs_lock.insert("blessing/filter".to_string(), "v1.2.0".to_string());
 
-    let mut lock = HashSet::new();
-    lock.insert("illuminate/support".to_string());
-    lock.insert("blessing/filter".to_string());
-
-    let composer_lock = json!({
+    let composer_lock = serde_json::json!({
         "packages": [
-            { "name": "illuminate/support" }
+            {
+                "name": "illuminate/support",
+                "version": "v6.20.0"
+            },
+            {
+                "name": "local/package",
+                "version": "v1.0.0"
+            }
         ]
     });
-    let composer_lock_path = format!("{}/composer.lock", path_display);
-    fs::write(
-        &composer_lock_path,
-        &serde_json::to_vec(&composer_lock).unwrap(),
+
+    let composer_lock_path = test_dir.join("composer.lock");
+    fs::write(&composer_lock_path, composer_lock.to_string()).await?;
+
+    let composer_json_path = test_dir.join("composer.json");
+    fs::write(&composer_json_path, b"{}").await?;
+
+    let vendor_dir = test_dir.join("vendor");
+    fs::create_dir(&vendor_dir).await?;
+
+    // 创建测试目录结构
+    let dirs = [
+        vendor_dir.join("illuminate/support"),
+        vendor_dir.join("blessing/filter"),
+        vendor_dir.join("local/package"),
+    ];
+    for dir in &dirs {
+        fs::create_dir_all(dir).await?;
+        fs::write(dir.join("test.txt"), b"test").await?;
+    }
+
+    composer::dedupe(
+        &bs_lock,
+        &test_dir,
+        &path_display,
+        &composer_json_path.to_string_lossy(),
     )
     .await?;
-    let composer_json_path = format!("{}/composer.json", path_display);
-    fs::write(&composer_json_path, b"").await?;
 
-    let mut vendor_path = path.clone();
-    vendor_path.push("vendor");
-    fs::create_dir(&vendor_path).await?;
-    let creations = lock
-        .iter()
-        .map(|name| format!("{}/{}", vendor_path.display(), name))
-        .map(fs::create_dir_all)
-        .collect::<Vec<_>>();
-    try_join_all(creations).await?;
-
-    nano::composer::dedupe(&lock, &path, &path_display, &composer_json_path).await?;
-
-    assert_eq!(
-        File::open(&composer_json_path).await.unwrap_err().kind(),
-        ErrorKind::NotFound
-    );
-    assert_eq!(
-        File::open(&composer_lock_path).await.unwrap_err().kind(),
-        ErrorKind::NotFound
-    );
-    assert_eq!(
-        File::open(format!("{}/illuminate/support", vendor_path.display()))
-            .await
-            .unwrap_err()
-            .kind(),
-        ErrorKind::NotFound
-    );
-    assert!(
-        File::open(format!("{}/blessing/filter", vendor_path.display()))
-            .await
-            .is_ok()
-    );
+    assert!(!composer_json_path.exists());
+    assert!(!composer_lock_path.exists());
+    assert!(!vendor_dir.join("illuminate/support").exists());
+    assert!(vendor_dir.join("blessing/filter").exists());
+    assert!(vendor_dir.join("local/package").exists());
 
     Ok(())
 }

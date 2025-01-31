@@ -38,7 +38,7 @@ fn to_map(list: Vec<Package>) -> BTreeMap<String, Package> {
 }
 
 fn to_list(map: BTreeMap<String, Package>) -> Vec<Package> {
-    map.into_iter().map(|(_, package)| package).collect()
+    map.into_values().collect()
 }
 
 async fn read_registry(path: impl AsRef<Path>) -> Result<BTreeMap<String, Package>> {
@@ -49,9 +49,8 @@ async fn read_registry(path: impl AsRef<Path>) -> Result<BTreeMap<String, Packag
 
     let json = fs::read_to_string(path).await?;
     let registry = serde_json::from_str::<Registry>(&json)
-        .map_err(|e| {
+        .inspect_err(|_e| {
             error!("Failed to parse previous registry data.");
-            e
         })
         .expect("Failed to parse previous registry data.");
 
@@ -81,9 +80,8 @@ where
         ))
         .await?;
         let package_json = serde_json::from_str::<PackageJson>(&json)
-            .map_err(|e| {
+            .inspect_err(|_e| {
                 error!("Failed to parse 'package.json` of plugin '{name}'.");
-                e
             })
             .expect("Failed to parse 'package.json' file.");
 

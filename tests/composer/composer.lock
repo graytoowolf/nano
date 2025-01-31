@@ -1,7 +1,12 @@
 {
     "packages": [
         {
-            "name": "blessing/filter"
+            "name": "blessing/filter",
+            "version": "v1.2.0"
+        },
+        {
+            "name": "illuminate/support",
+            "version": "v6.20.0"
         }
     ]
 }

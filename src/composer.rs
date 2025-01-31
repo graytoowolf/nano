@@ -6,7 +6,7 @@ use reqwest::ClientBuilder;
 use serde::Deserialize;
 use serde_json::from_slice;
 use std::{
-    collections::HashSet,
+    collections::{HashMap},
     env,
     io::{Error, ErrorKind},
     path::{self, Path},
@@ -19,11 +19,12 @@ struct ComposerLock {
     packages: Vec<ComposerPackage>,
 }
 
-pub type ComposerPackages = HashSet<String>;
+pub type ComposerPackages = HashMap<String, String>;
 
 #[derive(Deserialize)]
 pub struct ComposerPackage {
     name: String,
+    version: String,
 }
 
 pub async fn parse_lock(path: impl AsRef<Path>) -> Result<ComposerPackages> {
@@ -33,16 +34,15 @@ pub async fn parse_lock(path: impl AsRef<Path>) -> Result<ComposerPackages> {
 
     let json = fs::read(&path).await?;
     let lock = from_slice::<ComposerLock>(&json)
-        .map_err(|e| {
+        .inspect_err(|_e| {
             error!("Failed to parse composer.lock ({}).", path);
-            e
         })
         .unwrap();
 
     let packages = lock
         .packages
         .into_iter()
-        .map(|package| package.name)
+        .map(|package| (package.name, package.version))
         .collect();
     Ok(packages)
 }
@@ -71,7 +71,7 @@ pub async fn run_composer(path: impl AsRef<Path>) -> Result<()> {
     Ok(())
 }
 
-async fn install_and_clean(lock: &ComposerPackages, path: impl AsRef<Path>) -> Result<()> {
+async fn install_and_clean(bs_lock: &ComposerPackages, path: impl AsRef<Path>) -> Result<()> {
     let path_display = path.as_ref().display();
     let composer_json = format!("{}/composer.json", path_display);
     if let Err(e) = fs::File::open(&composer_json).await {
@@ -83,11 +83,11 @@ async fn install_and_clean(lock: &ComposerPackages, path: impl AsRef<Path>) -> R
 
     run_composer(&path).await?;
 
-    dedupe(lock, &path, &path_display, &composer_json).await
+    dedupe(bs_lock, &path, &path_display, &composer_json).await
 }
 
 pub async fn dedupe(
-    lock: &ComposerPackages,
+    bs_lock: &ComposerPackages,
     path: impl AsRef<Path>,
     display: &path::Display<'_>,
     manifest_path: &str,
@@ -96,9 +96,12 @@ pub async fn dedupe(
     let vendor_path = format!("{display}/vendor");
 
     let deletion = async {
-        let deletions = lock
-            .intersection(&local_lock)
-            .map(|name| vendor_path.clone() + "/" + name)
+        let deletions = local_lock
+            .iter()
+            .filter(|(name, version)| {
+                bs_lock.get(*name) == Some(version)
+            })
+            .map(|(name, _)| vendor_path.clone() + "/" + name)
             .map(fs::remove_dir_all);
         try_join_all(deletions).await?;
 
@@ -132,7 +135,7 @@ pub async fn install_php_dependencies<S: AsRef<str>>(
 ) -> Result<()> {
     let bs_lock = fetch_bs_lock().await.unwrap_or_else(|e| {
         warn!("Failed to fetch composer.lock of Blessing Skin Server: {e:?}");
-        HashSet::default()
+        HashMap::default()
     });
 
     info!("Starting to install PHP dependencies...");
@@ -175,7 +178,7 @@ async fn fetch_bs_lock() -> reqwest::Result<ComposerPackages> {
         .map(|lock| {
             lock.packages
                 .into_iter()
-                .map(|package| package.name)
+                .map(|package| (package.name, package.version))
                 .collect()
         })
 }
